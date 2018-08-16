@@ -5,13 +5,14 @@
 var xml = require('node-xml-lite');
 var fs = require('fs');
 var path = require('path');
+const shapeConverter = require('./shape_converter');
 
 // svg2vectorDrawableContent(svgContent: String, density: String|Number) -> vectorDrawableContent
 // svgContent: '<svg>...</svg>'
 // density: ldpi|mdpi|hdpi|xhdpi|xxhdpi|xxxhdpi|nodpi|[number]
 
 function svg2vectorDrawableContent(svgContent, density) {
-    
+
     var svg = xml.parseString(svgContent);
     var style = getStyle(svg.childs);
 
@@ -72,7 +73,7 @@ function svg2vectorDrawableContent(svgContent, density) {
 
                 // g -> group
                 if(obj[i].name === 'g' || obj[i].name === 'defs') {
-                    
+
                     // Attributes in group
                     groupAttrs = {};
 
@@ -172,13 +173,16 @@ function svg2vectorDrawableContent(svgContent, density) {
                     if(hasArrtib(obj[i].attrib, 'fill-rule')) {
                         groupAttrs.fillType = obj[i].attrib['fill-rule'];
                     }
-                    
-                    vectorDrawableXML += repeatString(' ', indent) + '<group>\n';
-                    travel(obj[i].childs, indent, groupAttrs);
-                    vectorDrawableXML += repeatString(' ', indent) + '</group>\n';
-                    
+
+                    // Hack to not output empty groups
+                    if(obj[i].childs[0] !== '\n') {
+                      vectorDrawableXML += repeatString(' ', indent) + '<group>\n';
+                      travel(obj[i].childs, indent, groupAttrs);
+                      vectorDrawableXML += repeatString(' ', indent) + '</group>\n';
+                    }
+
                 } else if(/(path|rect|circle|polygon|polyline|line|ellipse)/i.test(obj[i].name)) {
-                    
+
                     vectorDrawableXML += repeatString(' ', indent) + '<path\n';
 
                     // fill, opacity -> android:fillColor
@@ -211,7 +215,7 @@ function svg2vectorDrawableContent(svgContent, density) {
                     if(hasArrtib(obj[i].attrib, 'opacity')) {
                         opacity = obj[i].attrib['opacity'];
                     }
-                    
+
                     if(opacity !== '' && Number(opacity) !== 1) {
                         opacityHex = precentToHex(opacity * 100);
                         // #AARRGGBB
@@ -249,10 +253,10 @@ function svg2vectorDrawableContent(svgContent, density) {
                     if(fillAlpha !== '' && Number(fillAlpha) !== 1) {
                         vectorDrawableXML += repeatString(' ', indent) + '    android:fillAlpha="' + fillAlpha + '"\n';
                     }
-                    
+
                     // stroke -> android:strokeColor
                     var stroke = groupAttrs.stroke || '';
-                    
+
                     if(style && hasArrtib(obj[i].attrib, 'class')) {
                         if(getValueFromStyle('.' + obj[i].attrib.class, 'stroke', style)) {
                             stroke = getValueFromStyle('.' + obj[i].attrib.class, 'stroke', style);
@@ -268,12 +272,12 @@ function svg2vectorDrawableContent(svgContent, density) {
                     if(hasArrtib(obj[i].attrib, 'stroke')) {
                         stroke = obj[i].attrib['stroke'];
                     }
-                    
+
                     if(stroke !== '' && stroke !== 'none') {
                         stroke = formatColor(stroke);
                         vectorDrawableXML += repeatString(' ', indent) + '    android:strokeColor="' + stroke + '"\n';
                     }
-                    
+
                     // stroke-opacity -> android:strokeAlpha
                     var strokeAlpha = groupAttrs.strokeAlpha || '';
 
@@ -296,7 +300,7 @@ function svg2vectorDrawableContent(svgContent, density) {
                     if(strokeAlpha !== '' && (stroke !== '' && stroke !== 'none')) {
                         vectorDrawableXML += repeatString(' ', indent) + '    android:strokeAlpha="' + strokeAlpha + '"\n';
                     }
-                    
+
                     // stroke-width -> android:strokeWidth
                     var strokeWidth = groupAttrs.strokeWidth || '';
 
@@ -323,7 +327,7 @@ function svg2vectorDrawableContent(svgContent, density) {
                             vectorDrawableXML += repeatString(' ', indent) + '    android:strokeWidth="' + strokeWidth + '"\n';
                         }
                     }
-                    
+
                     // stroke-linejoin -> android:strokeLineJoin
                     var strokeLineJoin = groupAttrs.strokeLineJoin || '';
 
@@ -346,7 +350,7 @@ function svg2vectorDrawableContent(svgContent, density) {
                     if(strokeLineJoin !== '' && (stroke !== '' && stroke !== 'none')) {
                         vectorDrawableXML += repeatString(' ', indent) + '    android:strokeLineJoin="' + strokeLineJoin + '"\n';
                     }
-                    
+
                     // stroke-miterlimit -> android:strokeMiterLimit
                     var strokeMiterLimit = groupAttrs.strokeMiterLimit || '';
 
@@ -369,7 +373,7 @@ function svg2vectorDrawableContent(svgContent, density) {
                     if(strokeMiterLimit !== '' && (stroke !== '' && stroke !== 'none')) {
                         vectorDrawableXML += repeatString(' ', indent) + '    android:strokeMiterLimit="' + strokeMiterLimit + '"\n';
                     }
-                    
+
                     // stroke-linecap -> android:strokeLineCap
                     var strokeLineCap = groupAttrs.strokeLineCap || '';
 
@@ -392,7 +396,7 @@ function svg2vectorDrawableContent(svgContent, density) {
                     if(strokeLineCap !== '' && (stroke !== '' && stroke !== 'none')) {
                         vectorDrawableXML += repeatString(' ', indent) + '    android:strokeLineCap="' + strokeLineCap + '"\n';
                     }
-                    
+
                     // fill-rule -> android:fillType
                     var fillType = groupAttrs.fillType || '';
 
@@ -419,38 +423,26 @@ function svg2vectorDrawableContent(svgContent, density) {
                     // d -> android:pathData
                     var d = '';
 
+                    if(obj[i].attrib.points) {
+                      obj[i].attrib.points = obj[i].attrib.points.replace(/[^0-9., ]/g, '')
+                    }
                     if(/(rect)/i.test(obj[i].name)) {
-                        var x = obj[i].attrib.x ? parseFloat(obj[i].attrib.x) : 0;
-                        var y = obj[i].attrib.y ? parseFloat(obj[i].attrib.y) : 0;
-                        var width = parseFloat(obj[i].attrib.width);
-                        var height = parseFloat(obj[i].attrib.height);
-                        var rx = obj[i].attrib.rx ? parseFloat(obj[i].attrib.rx) : 0;
-                        var ry = obj[i].attrib.ry ? parseFloat(obj[i].attrib.ry) : 0;
-                        if(ry === 0) {
-                            ry = rx;
-                        } else if(rx === 0) {
-                            rx = ry;
-                        }
-                        d = rectToPath(x, y, width, height, rx, ry);
+                        d = shapeConverter.convertRect(obj[i].attrib);
                     } else if(/(circle)/i.test(obj[i].name)) {
-                        var cx = obj[i].attrib.cx ? parseFloat(obj[i].attrib.cx) : 0;
-                        var cy = obj[i].attrib.cy ? parseFloat(obj[i].attrib.cy) : 0;
-                        var r = parseFloat(obj[i].attrib.r);
-                        d = circleToPath(cx, cy, r);
-                    } else if(/(polygon|polyline|line)/i.test(obj[i].name)) {
-                        d = polygonToPath(obj[i].attrib.points);
+                        d = shapeConverter.convertCircle(obj[i].attrib);
+                    } else if (/(polygon)/i.test(obj[i].name)) {
+                        d = shapeConverter.convertPolygon(obj[i].attrib, false)
+                    } else if (/(polyline)/i.test(obj[i].name)) {
+                        d = shapeConverter.convertPolygon(obj[i].attrib, true)
+                    } else if(/(line)/i.test(obj[i].name)) {
+                      d = shapeConverter.convertLine(obj[i].attrib);
                     } else if(/(ellipse)/i.test(obj[i].name)) {
-                        var cx = obj[i].attrib.cx ? parseFloat(obj[i].attrib.cx) : 0;
-                        var cy = obj[i].attrib.cy ? parseFloat(obj[i].attrib.cy) : 0;
-                        var rx = obj[i].attrib.rx ? parseFloat(obj[i].attrib.rx) : 0;
-                        var ry = obj[i].attrib.ry ? parseFloat(obj[i].attrib.ry) : 0;
-                        d = ellipseToPath(cx, cy, rx, ry);
+                      d = shapeConverter.convertEllipse(obj[i].attrib);
                     } else {
-                        d = obj[i].attrib.d.trim();
+                      d = obj[i].attrib.d.trim();
                     }
 
                     vectorDrawableXML += repeatString(' ', indent) + '    android:pathData="' + d + '"/>\n';
-
                 }
             }
         } catch(e) {}
